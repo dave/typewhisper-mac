@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		AA00000000000000000217 /* IndicatorPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000000000000000207 /* IndicatorPreviewView.swift */; };
 		AA00000000000000000205 /* OverlayIndicatorPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000000000000000198 /* OverlayIndicatorPanel.swift */; };
+		AA000000000000000TOAST /* RecordingWarningToast.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000000000000000TOAST /* RecordingWarningToast.swift */; };
 		AA00000000000000000208 /* SharedIndicatorComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000000000000000197 /* SharedIndicatorComponents.swift */; };
 		AA00000000000000000206 /* OverlayIndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000000000000000195 /* OverlayIndicatorView.swift */; };
 		AA00000000000000000207 /* IndicatorCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000000000000000196 /* IndicatorCoordinator.swift */; };
@@ -205,6 +206,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		BB000000000000000TOAST /* RecordingWarningToast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingWarningToast.swift; sourceTree = "<group>"; };
 		BB00000000000000000198 /* OverlayIndicatorPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayIndicatorPanel.swift; sourceTree = "<group>"; };
 		BB00000000000000000197 /* SharedIndicatorComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedIndicatorComponents.swift; sourceTree = "<group>"; };
 		BB00000000000000000195 /* OverlayIndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayIndicatorView.swift; sourceTree = "<group>"; };
@@ -874,6 +876,7 @@
 		CC00000000000000000008 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				BB000000000000000TOAST /* RecordingWarningToast.swift */,
 				BB00000000000000000198 /* OverlayIndicatorPanel.swift */,
 				BB00000000000000000195 /* OverlayIndicatorView.swift */,
 				BB00000000000000000197 /* SharedIndicatorComponents.swift */,
@@ -2071,6 +2074,7 @@
 				AA00000000000000000124 /* PluginManager.swift in Sources */,
 				AA00000000000000000160 /* PluginRegistryService.swift in Sources */,
 				AA00000000000000000125 /* HostServicesImpl.swift in Sources */,
+				AA000000000000000TOAST /* RecordingWarningToast.swift in Sources */,
 				AA00000000000000000205 /* OverlayIndicatorPanel.swift in Sources */,
 				AA00000000000000000206 /* OverlayIndicatorView.swift in Sources */,
 				AA00000000000000000208 /* SharedIndicatorComponents.swift in Sources */,
