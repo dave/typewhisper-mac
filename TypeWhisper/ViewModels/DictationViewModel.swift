@@ -102,6 +102,7 @@ final class DictationViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var recordingTimer: Timer?
     private var recordingStartTime: Date?
+    private var durationWarningFired = false
     private let streamingHandler: StreamingHandler
     private let promptPaletteHandler: PromptPaletteHandler
     private let settingsHandler: DictationSettingsHandler
@@ -801,6 +802,11 @@ final class DictationViewModel: ObservableObject {
         promptPaletteHandler.triggerSelection(currentState: state, soundFeedbackEnabled: soundFeedbackEnabled)
     }
 
+    /// Show a transient notch/overlay message triggered by an external API call.
+    func showAPIFeedback(message: String, icon: String = "checkmark.circle.fill", duration: TimeInterval = 2.5) {
+        showNotchFeedback(message: message, icon: icon, duration: duration)
+    }
+
     private func showNotchFeedback(message: String, icon: String, duration: TimeInterval = 2.5, isError: Bool = false) {
         actionFeedbackMessage = message
         actionFeedbackIcon = icon
@@ -827,17 +833,27 @@ final class DictationViewModel: ObservableObject {
 
     private func startRecordingTimer() {
         recordingDuration = 0
+        durationWarningFired = false
         recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, let start = self.recordingStartTime else { return }
                 self.recordingDuration = Date().timeIntervalSince(start)
+                self.checkDurationWarning()
             }
         }
+    }
+
+    private func checkDurationWarning() {
+        guard !durationWarningFired, recordingDuration >= 25 else { return }
+        durationWarningFired = true
+        soundService.play(.error, enabled: soundFeedbackEnabled)
+        showNotchFeedback(message: "⚠ 5 seconds left", icon: "exclamationmark.triangle.fill", duration: 4.0, isError: true)
     }
 
     private func stopRecordingTimer() {
         recordingTimer?.invalidate()
         recordingTimer = nil
         recordingDuration = 0
+        durationWarningFired = false
     }
 }
