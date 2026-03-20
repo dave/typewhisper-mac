@@ -347,6 +347,16 @@ final class DictationViewModel: ObservableObject {
             return
         }
 
+        // Warn if dictionary terms are truncated (prompt over token limit)
+        let allTerms = dictionaryService.entries.filter { $0.type == .term && $0.isEnabled }
+        let fullPrompt = allTerms.map { $0.original }.joined(separator: ", ")
+        let cappedPrompt = dictionaryService.getTermsForPrompt() ?? ""
+        if fullPrompt.count > cappedPrompt.count && !fullPrompt.isEmpty {
+            let totalCount = allTerms.count
+            let usedCount = cappedPrompt.components(separatedBy: ", ").filter { !$0.isEmpty }.count
+            RecordingWarningToast.shared.show(message: "Dictionary truncated: \(usedCount)/\(totalCount) terms fit")
+        }
+
         // Cancel any pending transcription from a previous recording
         transcriptionTask?.cancel()
         transcriptionTask = nil
