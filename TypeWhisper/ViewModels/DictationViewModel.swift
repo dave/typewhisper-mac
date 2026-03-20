@@ -836,7 +836,7 @@ final class DictationViewModel: ObservableObject {
         durationWarningFired = false
         recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, let start = self.recordingStartTime else { return }
+                guard let self, let start = self.recordingStartTime, self.state == .recording else { return }
                 self.recordingDuration = Date().timeIntervalSince(start)
                 self.checkDurationWarning()
             }
