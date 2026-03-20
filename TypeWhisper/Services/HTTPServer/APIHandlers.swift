@@ -9,14 +9,16 @@ final class APIHandlers: @unchecked Sendable {
     private let translationService: AnyObject? // TranslationService (macOS 15+)
     private let historyService: HistoryService
     private let profileService: ProfileService
+    private let dictionaryService: DictionaryService
     private let dictationViewModel: DictationViewModel
 
-    init(modelManager: ModelManagerService, audioFileService: AudioFileService, translationService: AnyObject?, historyService: HistoryService, profileService: ProfileService, dictationViewModel: DictationViewModel) {
+    init(modelManager: ModelManagerService, audioFileService: AudioFileService, translationService: AnyObject?, historyService: HistoryService, profileService: ProfileService, dictionaryService: DictionaryService, dictationViewModel: DictationViewModel) {
         self.modelManager = modelManager
         self.audioFileService = audioFileService
         self.translationService = translationService
         self.historyService = historyService
         self.profileService = profileService
+        self.dictionaryService = dictionaryService
         self.dictationViewModel = dictationViewModel
     }
 
@@ -31,6 +33,15 @@ final class APIHandlers: @unchecked Sendable {
         router.register("POST", "/v1/dictation/start", handler: handleStartDictation)
         router.register("POST", "/v1/dictation/stop", handler: handleStopDictation)
         router.register("GET", "/v1/dictation/status", handler: handleDictationStatus)
+        // Dictionary
+        router.register("GET", "/v1/dictionary/terms", handler: handleGetTerms)
+        router.register("POST", "/v1/dictionary/terms", handler: handleSetTerms)
+        router.register("POST", "/v1/dictionary/terms/add", handler: handleAddTerms)
+        router.register("POST", "/v1/dictionary/terms/remove", handler: handleRemoveTerms)
+        router.register("GET", "/v1/dictionary/corrections", handler: handleGetCorrections)
+        router.register("POST", "/v1/dictionary/corrections", handler: handleSetCorrections)
+        router.register("POST", "/v1/dictionary/corrections/add", handler: handleAddCorrections)
+        router.register("POST", "/v1/dictionary/corrections/remove", handler: handleRemoveCorrections)
     }
 
     // MARK: - POST /v1/transcribe
@@ -459,6 +470,186 @@ final class APIHandlers: @unchecked Sendable {
         return await MainActor.run {
             struct DictationStatusResponse: Encodable { let is_recording: Bool }
             return .json(DictationStatusResponse(is_recording: dictationViewModel.isRecording))
+        }
+    }
+
+    // MARK: - Dictionary helpers
+
+    private struct TermEntry: Codable {
+        let id: String
+        let original: String
+        let is_enabled: Bool
+        let usage_count: Int
+        let created_at: Date
+    }
+
+    private struct CorrectionEntry: Codable {
+        let id: String
+        let original: String
+        let replacement: String
+        let case_sensitive: Bool
+        let is_enabled: Bool
+        let usage_count: Int
+        let created_at: Date
+    }
+
+    private func termEntry(from e: DictionaryEntry) -> TermEntry {
+        TermEntry(id: e.id.uuidString, original: e.original, is_enabled: e.isEnabled, usage_count: e.usageCount, created_at: e.createdAt)
+    }
+
+    private func correctionEntry(from e: DictionaryEntry) -> CorrectionEntry {
+        CorrectionEntry(id: e.id.uuidString, original: e.original, replacement: e.replacement ?? "", case_sensitive: e.caseSensitive, is_enabled: e.isEnabled, usage_count: e.usageCount, created_at: e.createdAt)
+    }
+
+    // MARK: - GET /v1/dictionary/terms
+
+    private func handleGetTerms(_ request: HTTPRequest) async -> HTTPResponse {
+        let ds = dictionaryService
+        return await MainActor.run {
+            struct TermsResponse: Encodable {
+                let terms: [TermEntry]
+                let count: Int
+                let prompt: String?
+            }
+            let entries = ds.entries.filter { $0.type == .term }
+            let mapped = entries.map { self.termEntry(from: $0) }
+            return .json(TermsResponse(terms: mapped, count: mapped.count, prompt: ds.getTermsForPrompt()))
+        }
+    }
+
+    // MARK: - POST /v1/dictionary/terms (replace all)
+
+    private func handleSetTerms(_ request: HTTPRequest) async -> HTTPResponse {
+        struct Body: Decodable { let terms: [String] }
+        guard let body = try? JSONDecoder().decode(Body.self, from: request.body) else {
+            return .error(status: 400, message: "Expected JSON body: {\"terms\": [\"word1\", ...]}")
+        }
+        let ds = dictionaryService
+        return await MainActor.run {
+            // Remove existing terms
+            let existing = ds.entries.filter { $0.type == .term }
+            ds.deleteEntries(existing)
+            // Add new ones
+            let items = body.terms.map { (type: DictionaryEntryType.term, original: $0, replacement: String?.none, caseSensitive: false) }
+            ds.addEntries(items)
+            let newEntries = ds.entries.filter { $0.type == .term }
+            struct TermsResponse: Encodable { let terms: [TermEntry]; let count: Int; let prompt: String? }
+            return .json(TermsResponse(terms: newEntries.map { self.termEntry(from: $0) }, count: newEntries.count, prompt: ds.getTermsForPrompt()))
+        }
+    }
+
+    // MARK: - POST /v1/dictionary/terms/add
+
+    private func handleAddTerms(_ request: HTTPRequest) async -> HTTPResponse {
+        struct Body: Decodable { let terms: [String] }
+        guard let body = try? JSONDecoder().decode(Body.self, from: request.body) else {
+            return .error(status: 400, message: "Expected JSON body: {\"terms\": [\"word1\", ...]}")
+        }
+        let ds = dictionaryService
+        return await MainActor.run {
+            let existingSet = Set(ds.entries.filter { $0.type == .term }.map { $0.original.lowercased() })
+            var added: [String] = []
+            var skipped: [String] = []
+            for term in body.terms {
+                if existingSet.contains(term.lowercased()) { skipped.append(term) } else { added.append(term) }
+            }
+            let items = added.map { (type: DictionaryEntryType.term, original: $0, replacement: String?.none, caseSensitive: false) }
+            ds.addEntries(items)
+            struct AddResponse: Encodable { let added: [String]; let skipped: [String]; let count: Int; let prompt: String? }
+            return .json(AddResponse(added: added, skipped: skipped, count: ds.entries.filter { $0.type == .term }.count, prompt: ds.getTermsForPrompt()))
+        }
+    }
+
+    // MARK: - POST /v1/dictionary/terms/remove
+
+    private func handleRemoveTerms(_ request: HTTPRequest) async -> HTTPResponse {
+        struct Body: Decodable { let terms: [String] }
+        guard let body = try? JSONDecoder().decode(Body.self, from: request.body) else {
+            return .error(status: 400, message: "Expected JSON body: {\"terms\": [\"word1\", ...]}")
+        }
+        let ds = dictionaryService
+        return await MainActor.run {
+            let lowercased = Set(body.terms.map { $0.lowercased() })
+            let toDelete = ds.entries.filter { $0.type == .term && lowercased.contains($0.original.lowercased()) }
+            let removed = toDelete.map { $0.original }
+            let notFound = body.terms.filter { t in !toDelete.contains(where: { $0.original.lowercased() == t.lowercased() }) }
+            ds.deleteEntries(toDelete)
+            struct RemoveResponse: Encodable { let removed: [String]; let not_found: [String]; let count: Int }
+            return .json(RemoveResponse(removed: removed, not_found: notFound, count: ds.entries.filter { $0.type == .term }.count))
+        }
+    }
+
+    // MARK: - GET /v1/dictionary/corrections
+
+    private func handleGetCorrections(_ request: HTTPRequest) async -> HTTPResponse {
+        let ds = dictionaryService
+        return await MainActor.run {
+            struct CorrectionsResponse: Encodable { let corrections: [CorrectionEntry]; let count: Int }
+            let entries = ds.entries.filter { $0.type == .correction }
+            return .json(CorrectionsResponse(corrections: entries.map { self.correctionEntry(from: $0) }, count: entries.count))
+        }
+    }
+
+    // MARK: - POST /v1/dictionary/corrections (replace all)
+
+    private func handleSetCorrections(_ request: HTTPRequest) async -> HTTPResponse {
+        struct CorrectionInput: Decodable { let original: String; let replacement: String; let case_sensitive: Bool? }
+        struct Body: Decodable { let corrections: [CorrectionInput] }
+        guard let body = try? JSONDecoder().decode(Body.self, from: request.body) else {
+            return .error(status: 400, message: "Expected JSON body: {\"corrections\": [{\"original\": \"x\", \"replacement\": \"y\"}]}")
+        }
+        let ds = dictionaryService
+        return await MainActor.run {
+            let existing = ds.entries.filter { $0.type == .correction }
+            ds.deleteEntries(existing)
+            let items = body.corrections.map { c in (type: DictionaryEntryType.correction, original: c.original, replacement: Optional(c.replacement), caseSensitive: c.case_sensitive ?? false) }
+            ds.addEntries(items)
+            let newEntries = ds.entries.filter { $0.type == .correction }
+            struct CorrectionsResponse: Encodable { let corrections: [CorrectionEntry]; let count: Int }
+            return .json(CorrectionsResponse(corrections: newEntries.map { self.correctionEntry(from: $0) }, count: newEntries.count))
+        }
+    }
+
+    // MARK: - POST /v1/dictionary/corrections/add
+
+    private func handleAddCorrections(_ request: HTTPRequest) async -> HTTPResponse {
+        struct CorrectionInput: Decodable { let original: String; let replacement: String; let case_sensitive: Bool? }
+        struct Body: Decodable { let corrections: [CorrectionInput] }
+        guard let body = try? JSONDecoder().decode(Body.self, from: request.body) else {
+            return .error(status: 400, message: "Expected JSON body: {\"corrections\": [{\"original\": \"x\", \"replacement\": \"y\"}]}")
+        }
+        let ds = dictionaryService
+        return await MainActor.run {
+            let existingSet = Set(ds.entries.filter { $0.type == .correction }.map { $0.original.lowercased() })
+            var added: [String] = []
+            var skipped: [String] = []
+            var items: [(type: DictionaryEntryType, original: String, replacement: String?, caseSensitive: Bool)] = []
+            for c in body.corrections {
+                if existingSet.contains(c.original.lowercased()) { skipped.append(c.original) }
+                else { added.append(c.original); items.append((type: .correction, original: c.original, replacement: c.replacement, caseSensitive: c.case_sensitive ?? false)) }
+            }
+            ds.addEntries(items)
+            struct AddResponse: Encodable { let added: [String]; let skipped: [String]; let count: Int }
+            return .json(AddResponse(added: added, skipped: skipped, count: ds.entries.filter { $0.type == .correction }.count))
+        }
+    }
+
+    // MARK: - POST /v1/dictionary/corrections/remove
+
+    private func handleRemoveCorrections(_ request: HTTPRequest) async -> HTTPResponse {
+        struct Body: Decodable { let originals: [String] }
+        guard let body = try? JSONDecoder().decode(Body.self, from: request.body) else {
+            return .error(status: 400, message: "Expected JSON body: {\"originals\": [\"x\", ...]}")
+        }
+        let ds = dictionaryService
+        return await MainActor.run {
+            let lowercased = Set(body.originals.map { $0.lowercased() })
+            let toDelete = ds.entries.filter { $0.type == .correction && lowercased.contains($0.original.lowercased()) }
+            let removed = toDelete.map { $0.original }
+            let notFound = body.originals.filter { o in !toDelete.contains(where: { $0.original.lowercased() == o.lowercased() }) }
+            ds.deleteEntries(toDelete)
+            struct RemoveResponse: Encodable { let removed: [String]; let not_found: [String]; let count: Int }
+            return .json(RemoveResponse(removed: removed, not_found: notFound, count: ds.entries.filter { $0.type == .correction }.count))
         }
     }
 
