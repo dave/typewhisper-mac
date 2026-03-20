@@ -204,12 +204,13 @@ final class DictionaryService: ObservableObject {
     }
 
     /// Get all enabled terms as a comma-separated string for Whisper prompt.
-    /// Truncates at 1400 characters to stay within the API's 224-token limit.
-    /// Technical terms are short so 1400 chars ≈ ~180-200 tokens in practice.
+    /// Truncates to stay within Whisper's 224-token limit.
+    /// Short technical terms average ~5 chars each + 2 for ", " separator = ~7 chars/token.
+    /// 224 tokens × 7 = ~800 chars safe maximum.
     func getTermsForPrompt() -> String? {
         let enabledTerms = terms.map { $0.original }
         guard !enabledTerms.isEmpty else { return nil }
-        let maxLength = 1400
+        let maxLength = 800
         var result = ""
         for (i, term) in enabledTerms.enumerated() {
             let separator = i > 0 ? ", " : ""

@@ -407,7 +407,7 @@ final class DeepgramPlugin: NSObject, TranscriptionEnginePlugin, @unchecked Send
             throw PluginTranscriptionError.noModelSelected
         }
 
-        return try await transcribeREST(audio: audio, language: language, modelId: modelId, apiKey: apiKey)
+        return try await transcribeREST(audio: audio, language: language, modelId: modelId, apiKey: apiKey, prompt: prompt)
     }
 
     // MARK: - Transcription (WebSocket Streaming)
@@ -429,17 +429,17 @@ final class DeepgramPlugin: NSObject, TranscriptionEnginePlugin, @unchecked Send
         do {
             return try await transcribeWebSocket(
                 audio: audio, language: language, modelId: modelId,
-                apiKey: apiKey, onProgress: onProgress
+                apiKey: apiKey, prompt: prompt, onProgress: onProgress
             )
         } catch {
             // Fallback to REST on WebSocket failure
-            return try await transcribeREST(audio: audio, language: language, modelId: modelId, apiKey: apiKey)
+            return try await transcribeREST(audio: audio, language: language, modelId: modelId, apiKey: apiKey, prompt: prompt)
         }
     }
 
     // MARK: - REST Implementation
 
-    private func transcribeREST(audio: AudioData, language: String?, modelId: String, apiKey: String) async throws -> PluginTranscriptionResult {
+    private func transcribeREST(audio: AudioData, language: String?, modelId: String, apiKey: String, prompt: String? = nil) async throws -> PluginTranscriptionResult {
         var components = URLComponents(string: "\(effectiveBaseURL)/v1/listen")!
         var queryItems = [
             URLQueryItem(name: "model", value: modelId),
@@ -448,6 +448,12 @@ final class DeepgramPlugin: NSObject, TranscriptionEnginePlugin, @unchecked Send
         ]
         if let lang = language, !lang.isEmpty {
             queryItems.append(URLQueryItem(name: "language", value: lang))
+        }
+        // Pass dictionary terms as Deepgram keyterms — no token limit, unlike Whisper's 224-token cap
+        if let prompt = prompt, !prompt.isEmpty {
+            for term in prompt.components(separatedBy: ", ") where !term.isEmpty {
+                queryItems.append(URLQueryItem(name: "keyterm", value: term))
+            }
         }
         components.queryItems = queryItems
 
@@ -486,6 +492,7 @@ final class DeepgramPlugin: NSObject, TranscriptionEnginePlugin, @unchecked Send
         language: String?,
         modelId: String,
         apiKey: String,
+        prompt: String? = nil,
         onProgress: @Sendable @escaping (String) -> Bool
     ) async throws -> PluginTranscriptionResult {
         // Build query string for path
@@ -503,6 +510,12 @@ final class DeepgramPlugin: NSObject, TranscriptionEnginePlugin, @unchecked Send
             queryItems.append(URLQueryItem(name: "language", value: lang))
         } else {
             queryItems.append(URLQueryItem(name: "detect_language", value: "true"))
+        }
+        // Pass dictionary terms as Deepgram keyterms — no token limit
+        if let prompt = prompt, !prompt.isEmpty {
+            for term in prompt.components(separatedBy: ", ") where !term.isEmpty {
+                queryItems.append(URLQueryItem(name: "keyterm", value: term))
+            }
         }
 
         let baseURL = effectiveBaseURL
