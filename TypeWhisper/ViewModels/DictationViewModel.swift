@@ -846,7 +846,7 @@ final class DictationViewModel: ObservableObject {
     private func checkDurationWarning() {
         guard !durationWarningFired, recordingDuration >= 25 else { return }
         durationWarningFired = true
-        soundService.play(.error, enabled: soundFeedbackEnabled)
+        NSSound.beep() // always audible regardless of sound feedback setting
         showNotchFeedback(message: "⚠ 5 seconds left", icon: "exclamationmark.triangle.fill", duration: 4.0, isError: true)
     }
 

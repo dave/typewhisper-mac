@@ -12,6 +12,11 @@ final class APIHandlers: @unchecked Sendable {
     private let dictionaryService: DictionaryService
     private let dictationViewModel: DictationViewModel
 
+    /// Show a brief notch/overlay message after a dictionary mutation.
+    @MainActor private func dictionaryFeedback(_ message: String, icon: String = "text.badge.checkmark") {
+        dictationViewModel.showAPIFeedback(message: message, icon: icon)
+    }
+
     init(modelManager: ModelManagerService, audioFileService: AudioFileService, translationService: AnyObject?, historyService: HistoryService, profileService: ProfileService, dictionaryService: DictionaryService, dictationViewModel: DictationViewModel) {
         self.modelManager = modelManager
         self.audioFileService = audioFileService
@@ -533,6 +538,7 @@ final class APIHandlers: @unchecked Sendable {
             let items = body.terms.map { (type: DictionaryEntryType.term, original: $0, replacement: String?.none, caseSensitive: false) }
             ds.addEntries(items)
             let newEntries = ds.entries.filter { $0.type == .term }
+            self.dictionaryFeedback("Dictionary: \(newEntries.count) term\(newEntries.count == 1 ? "" : "s")")
             struct TermsResponse: Encodable { let terms: [TermEntry]; let count: Int; let prompt: String? }
             return .json(TermsResponse(terms: newEntries.map { self.termEntry(from: $0) }, count: newEntries.count, prompt: ds.getTermsForPrompt()))
         }
@@ -555,8 +561,12 @@ final class APIHandlers: @unchecked Sendable {
             }
             let items = added.map { (type: DictionaryEntryType.term, original: $0, replacement: String?.none, caseSensitive: false) }
             ds.addEntries(items)
+            let totalCount = ds.entries.filter { $0.type == .term }.count
+            if !added.isEmpty {
+                self.dictionaryFeedback("+\(added.count) term\(added.count == 1 ? "" : "s") (\(totalCount) total)", icon: "plus.circle.fill")
+            }
             struct AddResponse: Encodable { let added: [String]; let skipped: [String]; let count: Int; let prompt: String? }
-            return .json(AddResponse(added: added, skipped: skipped, count: ds.entries.filter { $0.type == .term }.count, prompt: ds.getTermsForPrompt()))
+            return .json(AddResponse(added: added, skipped: skipped, count: totalCount, prompt: ds.getTermsForPrompt()))
         }
     }
 
@@ -574,8 +584,12 @@ final class APIHandlers: @unchecked Sendable {
             let removed = toDelete.map { $0.original }
             let notFound = body.terms.filter { t in !toDelete.contains(where: { $0.original.lowercased() == t.lowercased() }) }
             ds.deleteEntries(toDelete)
+            let totalCount = ds.entries.filter { $0.type == .term }.count
+            if !removed.isEmpty {
+                self.dictionaryFeedback("−\(removed.count) term\(removed.count == 1 ? "" : "s") (\(totalCount) total)", icon: "minus.circle.fill")
+            }
             struct RemoveResponse: Encodable { let removed: [String]; let not_found: [String]; let count: Int }
-            return .json(RemoveResponse(removed: removed, not_found: notFound, count: ds.entries.filter { $0.type == .term }.count))
+            return .json(RemoveResponse(removed: removed, not_found: notFound, count: totalCount))
         }
     }
 
@@ -605,6 +619,7 @@ final class APIHandlers: @unchecked Sendable {
             let items = body.corrections.map { c in (type: DictionaryEntryType.correction, original: c.original, replacement: Optional(c.replacement), caseSensitive: c.case_sensitive ?? false) }
             ds.addEntries(items)
             let newEntries = ds.entries.filter { $0.type == .correction }
+            self.dictionaryFeedback("Dictionary: \(newEntries.count) correction\(newEntries.count == 1 ? "" : "s")")
             struct CorrectionsResponse: Encodable { let corrections: [CorrectionEntry]; let count: Int }
             return .json(CorrectionsResponse(corrections: newEntries.map { self.correctionEntry(from: $0) }, count: newEntries.count))
         }
@@ -629,8 +644,12 @@ final class APIHandlers: @unchecked Sendable {
                 else { added.append(c.original); items.append((type: .correction, original: c.original, replacement: c.replacement, caseSensitive: c.case_sensitive ?? false)) }
             }
             ds.addEntries(items)
+            let totalCount = ds.entries.filter { $0.type == .correction }.count
+            if !added.isEmpty {
+                self.dictionaryFeedback("+\(added.count) correction\(added.count == 1 ? "" : "s") (\(totalCount) total)", icon: "plus.circle.fill")
+            }
             struct AddResponse: Encodable { let added: [String]; let skipped: [String]; let count: Int }
-            return .json(AddResponse(added: added, skipped: skipped, count: ds.entries.filter { $0.type == .correction }.count))
+            return .json(AddResponse(added: added, skipped: skipped, count: totalCount))
         }
     }
 
@@ -648,8 +667,12 @@ final class APIHandlers: @unchecked Sendable {
             let removed = toDelete.map { $0.original }
             let notFound = body.originals.filter { o in !toDelete.contains(where: { $0.original.lowercased() == o.lowercased() }) }
             ds.deleteEntries(toDelete)
+            let totalCount = ds.entries.filter { $0.type == .correction }.count
+            if !removed.isEmpty {
+                self.dictionaryFeedback("−\(removed.count) correction\(removed.count == 1 ? "" : "s") (\(totalCount) total)", icon: "minus.circle.fill")
+            }
             struct RemoveResponse: Encodable { let removed: [String]; let not_found: [String]; let count: Int }
-            return .json(RemoveResponse(removed: removed, not_found: notFound, count: ds.entries.filter { $0.type == .correction }.count))
+            return .json(RemoveResponse(removed: removed, not_found: notFound, count: totalCount))
         }
     }
 
